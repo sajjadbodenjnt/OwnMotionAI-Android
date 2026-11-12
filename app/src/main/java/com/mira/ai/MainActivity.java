@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -22,6 +23,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     private static final int REQ_SPEECH = 41;
@@ -31,19 +33,70 @@ public class MainActivity extends Activity {
     private EditText input;
     private TextToSpeech tts;
     private boolean ttsReady = false;
+    private boolean femaleVoiceFound = false;
+    private String voiceStatus = "ভয়েস প্রস্তুত হচ্ছে";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(Color.rgb(12, 18, 34));
         getWindow().setNavigationBarColor(Color.rgb(12, 18, 34));
+        buildUi();
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
+                int languageResult = tts.setLanguage(new Locale("bn", "BD"));
+                chooseFemaleVoice();
                 ttsReady = true;
-                tts.setLanguage(new Locale("bn", "BD"));
+                if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
+                    languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    voiceStatus = "বাংলা TTS ভাষা ইনস্টল নেই";
+                }
+                Toast.makeText(this, voiceStatus, Toast.LENGTH_LONG).show();
+            } else {
+                voiceStatus = "Text-to-Speech চালু করা যায়নি";
+                Toast.makeText(this, voiceStatus, Toast.LENGTH_LONG).show();
             }
         });
-        buildUi();
-        addMessage("assistant", "আসসালামু আলাইকুম! আমি Mira AI। চ্যাট ও ভয়েস ইন্টারফেস প্রস্তুত। AI মডেল সংযুক্ত না হওয়া পর্যন্ত আমি বানানো উত্তর দেব না। Settings থেকে পরবর্তী ধাপে মডেল যুক্ত করা হবে।");
+        addMessage("assistant", "আসসালামু আলাইকুম! আমি Mira AI। চ্যাট ও ভয়েস ইন্টারফেস প্রস্তুত। AI মডেল সংযুক্ত না হওয়া পর্যন্ত আমি বানানো উত্তর দেব না।");
+    }
+
+    private void chooseFemaleVoice() {
+        if (Build.VERSION.SDK_INT < 21 || tts == null) {
+            voiceStatus = "এই Android সংস্করণে ভয়েস নির্বাচন সমর্থিত নয়";
+            return;
+        }
+        Set<Voice> voices = tts.getVoices();
+        if (voices == null || voices.isEmpty()) {
+            voiceStatus = "ইনস্টল করা ভয়েস পাওয়া যায়নি";
+            return;
+        }
+        Voice bengaliFemale = null;
+        Voice anyFemale = null;
+        for (Voice voice : voices) {
+            String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+            String language = voice.getLocale() == null ? "" : voice.getLocale().getLanguage();
+            boolean female = name.contains("female") || name.contains("woman") ||
+                    name.contains("fem") || name.contains("samantha") ||
+                    name.contains("zira") || name.contains("susan");
+            if (female && anyFemale == null) anyFemale = voice;
+            if (female && "bn".equals(language)) {
+                bengaliFemale = voice;
+                break;
+            }
+        }
+        Voice selected = bengaliFemale != null ? bengaliFemale : anyFemale;
+        if (selected != null) {
+            int result = tts.setVoice(selected);
+            if (result == TextToSpeech.SUCCESS) {
+                femaleVoiceFound = true;
+                voiceStatus = bengaliFemale != null
+                        ? "বাংলা নারী কণ্ঠ নির্বাচিত: " + selected.getName()
+                        : "নারী কণ্ঠ নির্বাচিত; বাংলা উচ্চারণের মান ভিন্ন হতে পারে";
+                return;
+            }
+        }
+        tts.setLanguage(new Locale("bn", "BD"));
+        femaleVoiceFound = false;
+        voiceStatus = "ইনস্টল করা নারী কণ্ঠ পাওয়া যায়নি; ডিভাইসের ডিফল্ট বাংলা কণ্ঠ ব্যবহৃত হবে";
     }
 
     private void buildUi() {
@@ -54,15 +107,16 @@ public class MainActivity extends Activity {
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(20, 18, 20, 18);
+        header.setPadding(16, 12, 12, 12);
         header.setBackgroundColor(Color.rgb(20, 29, 51));
         TextView brand = new TextView(this);
         brand.setText("✦  Mira AI"); brand.setTextColor(Color.WHITE);
         brand.setTextSize(22); brand.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView status = new TextView(this);
-        status.setText("● প্রস্তুত"); status.setTextColor(Color.rgb(119, 220, 177)); status.setTextSize(12);
-        header.addView(status);
+        Button voiceSettings = new Button(this);
+        voiceSettings.setText("♀ Voice");
+        voiceSettings.setOnClickListener(v -> testVoice());
+        header.addView(voiceSettings);
         root.addView(header);
 
         scroll = new ScrollView(this);
@@ -72,8 +126,9 @@ public class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         TextView hint = new TextView(this);
-        hint.setText("Mira AI • বাংলা ও English"); hint.setTextColor(Color.LTGRAY);
-        hint.setTextSize(11); hint.setGravity(Gravity.CENTER); hint.setPadding(8, 4, 8, 8);
+        hint.setText("Mira AI • বাংলা ও English • নারী কণ্ঠ পছন্দ");
+        hint.setTextColor(Color.LTGRAY); hint.setTextSize(11);
+        hint.setGravity(Gravity.CENTER); hint.setPadding(8, 4, 8, 8);
         root.addView(hint);
 
         LinearLayout composer = new LinearLayout(this);
@@ -88,6 +143,16 @@ public class MainActivity extends Activity {
         Button send = new Button(this); send.setText("➤"); send.setOnClickListener(v -> sendMessage());
         composer.addView(send);
         root.addView(composer);
+    }
+
+    private void testVoice() {
+        if (!ttsReady || tts == null) {
+            Toast.makeText(this, "ভয়েস ইঞ্জিন এখনো প্রস্তুত নয়", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, voiceStatus, Toast.LENGTH_LONG).show();
+        tts.speak("আসসালামু আলাইকুম। আমি মীরা। আপনার সহকারী হিসেবে প্রস্তুত আছি।",
+                TextToSpeech.QUEUE_FLUSH, null, "mira_voice_test");
     }
 
     private void addMessage(String who, String body) {
@@ -124,7 +189,9 @@ public class MainActivity extends Activity {
             intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bn-BD");
             intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Mira AI-কে বলুন");
             startActivityForResult(intent, REQ_SPEECH);
-        } catch (Exception e) { Toast.makeText(this, "এই ডিভাইসে Speech Recognition পাওয়া যায়নি", Toast.LENGTH_LONG).show(); }
+        } catch (Exception e) {
+            Toast.makeText(this, "এই ডিভাইসে Speech Recognition পাওয়া যায়নি", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
