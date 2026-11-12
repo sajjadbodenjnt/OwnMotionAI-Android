@@ -29,6 +29,8 @@ import java.util.Set;
 public class MainActivity extends Activity {
     private static final int REQ_SPEECH = 41;
     private static final int REQ_MIC = 42;
+    private static final int REQ_MODEL = 43;
+    private LlamaEngine llama;
     private LinearLayout messages;
     private ScrollView scroll;
     private EditText input;
@@ -42,6 +44,7 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Color.rgb(12, 18, 34));
         getWindow().setNavigationBarColor(Color.rgb(12, 18, 34));
         buildUi();
+        llama = new LlamaEngine();
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 int languageResult = tts.setLanguage(new Locale("bn", "BD"));
@@ -119,6 +122,10 @@ public class MainActivity extends Activity {
         brand.setText("Mira AI"); brand.setTextColor(Color.WHITE);
         brand.setTextSize(22); brand.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        Button modelButton = new Button(this);
+        modelButton.setText("মডেল");
+        modelButton.setOnClickListener(v -> chooseModel());
+        header.addView(modelButton);
         Button voiceSettings = new Button(this);
         voiceSettings.setText("♀ Voice");
         voiceSettings.setOnClickListener(v -> testVoice());
@@ -177,8 +184,48 @@ public class MainActivity extends Activity {
         if (text.isEmpty()) return;
         addMessage("user", text); input.setText("");
         ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(input.getWindowToken(), 0);
-        String reply = "আপনার বার্তাটি পেয়েছি। এই প্রাথমিক সংস্করণে এখনো Gemma/llama.cpp মডেল সংযুক্ত হয়নি। পরবর্তী ধাপে স্থানীয় GGUF inference engine যুক্ত করতে হবে।";
-        addMessage("assistant", reply);
+        if (llama != null && llama.isLoaded()) {
+            addMessage("assistant", "উত্তর তৈরি হচ্ছে…");
+            new Thread(() -> {
+                String reply = llama.generate(text);
+                runOnUiThread(() -> {
+                    int last = messages.getChildCount() - 1;
+                    if (last >= 0) messages.removeViewAt(last);
+                    addMessage("assistant", reply);
+                    if (ttsReady && tts != null) tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "mira_reply");
+                });
+            }).start();
+        } else {
+            addMessage("assistant", "এখনো GGUF মডেল লোড করা হয়নি। উপরের ‘মডেল’ বাটনে চাপ দিয়ে Gemma GGUF ফাইল নির্বাচন করুন।");
+        }
+    }
+
+    private void chooseModel() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, REQ_MODEL);
+    }
+
+    private void loadSelectedModel(Intent data) {
+        try {
+            java.io.InputStream in = getContentResolver().openInputStream(data.getData());
+            java.io.File model = new java.io.File(getFilesDir(), "selected-model.gguf");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(model);
+            byte[] buffer = new byte[1024 * 1024];
+            int count;
+            while ((count = in.read(buffer)) > 0) out.write(buffer, 0, count);
+            out.close(); in.close();
+            Toast.makeText(this, "মডেল কপি হয়েছে; লোড হচ্ছে…", Toast.LENGTH_LONG).show();
+            new Thread(() -> {
+                boolean ok = llama.loadModel(model.getAbsolutePath());
+                runOnUiThread(() -> Toast.makeText(this,
+                        ok ? "GGUF মডেল লোড হয়েছে" : "মডেল লোড হয়নি; Logcat দেখুন",
+                        Toast.LENGTH_LONG).show());
+            }).start();
+        } catch (Exception e) {
+            Toast.makeText(this, "মডেল ফাইল পড়া যায়নি: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void startVoice() {
@@ -208,6 +255,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_MODEL && resultCode == RESULT_OK && data != null) {
+            loadSelectedModel(data);
+            return;
+        }
         if (requestCode == REQ_SPEECH && resultCode == RESULT_OK && data != null) {
             ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
             if (results != null && !results.isEmpty()) { input.setText(results.get(0)); sendMessage(); }
@@ -216,6 +267,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (tts != null) { tts.stop(); tts.shutdown(); }
+        if (llama != null) llama.close();
         super.onDestroy();
     }
 }
