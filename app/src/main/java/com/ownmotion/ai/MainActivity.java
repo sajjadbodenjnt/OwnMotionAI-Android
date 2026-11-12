@@ -142,7 +142,11 @@ public class MainActivity extends Activity {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             try (InputStream in = getContentResolver().openInputStream(uri)) {
+                if (in == null) throw new java.io.IOException("ছবির stream খোলা যায়নি");
                 BitmapFactory.decodeStream(in, null, bounds);
+            } catch (Exception e) {
+                Toast.makeText(this, "ছবির তথ্য পড়া যায়নি: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                return;
             }
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, 2048);
