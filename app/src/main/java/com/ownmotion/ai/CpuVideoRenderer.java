@@ -65,7 +65,7 @@ public final class CpuVideoRenderer {
                     surface.unlockCanvasAndPost(canvas);
                 }
                 drain(codec, muxer, info, state, false);
-                if ((frame % 4) == 0) Thread.sleep(5);
+                Thread.sleep(1000 / FPS); // pace surface frames for approximately real-time playback
             }
 
             codec.signalEndOfInputStream();
