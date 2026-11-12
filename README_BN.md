@@ -19,7 +19,7 @@ pkg update
 pkg install git openjdk-17 gradle
 git clone https://github.com/sajjadbodenjnt/OwnMotionAI-Android.git
 cd OwnMotionAI-Android
-export JAVA_HOME=$PREFIX/opt/openjdk
+export JAVA_HOME=$PREFIX/lib/jvm/java-17-openjdk
 export ANDROID_HOME=$HOME/android-sdk
 export ANDROID_SDK_ROOT=$ANDROID_HOME
 gradle --version
