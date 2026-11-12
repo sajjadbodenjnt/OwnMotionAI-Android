@@ -139,8 +139,15 @@ public class MainActivity extends Activity {
             try {
                 getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (Exception ignored) { }
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
             try (InputStream in = getContentResolver().openInputStream(uri)) {
-                Bitmap b = BitmapFactory.decodeStream(in);
+                BitmapFactory.decodeStream(in, null, bounds);
+            }
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, 2048);
+            try (InputStream in = getContentResolver().openInputStream(uri)) {
+                Bitmap b = BitmapFactory.decodeStream(in, null, options);
                 if (b == null) throw new Exception("ছবি পড়া যায়নি");
                 if (selectedBitmap != null) selectedBitmap.recycle();
                 selectedBitmap = b;
@@ -168,6 +175,11 @@ public class MainActivity extends Activity {
         t.setText(value); t.setTextSize(size); t.setTextColor(color);
         if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
         return t;
+    }
+    private int sampleSize(int width, int height, int maxSide) {
+        int sample = 1;
+        while (width / sample > maxSide || height / sample > maxSide) sample *= 2;
+        return Math.max(1, sample);
     }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
     @Override protected void onDestroy() {
